@@ -1,0 +1,193 @@
+name: entorno-1
+
+services:
+  api-dev:
+    profiles: ["dev"]
+    container_name: prueba-api-dev
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: node server.js
+    expose:
+      - "3000"
+    environment:
+      REDIS_HOST: cache
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_NAME: ${MARIADB_DATABASE:-app}
+      DB_USER: ${MARIADB_USER:-app}
+      DB_PASSWORD: ${MARIADB_PASSWORD:-app_dev_password}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      dependencies:
+        condition: service_completed_successfully
+      cache:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    networks:
+      backend:
+        aliases:
+          - api-dev
+
+  worker-dev:
+    profiles: ["dev"]
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: node worker.js
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: cache
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_NAME: ${MARIADB_DATABASE:-app}
+      DB_USER: ${MARIADB_USER:-app}
+      DB_PASSWORD: ${MARIADB_PASSWORD:-app_dev_password}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      dependencies:
+        condition: service_completed_successfully
+      cache:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    networks:
+      - backend
+
+  api-prod:
+    profiles: ["prod"]
+    container_name: prueba-api-prod
+    build: ./backend
+    command: node server.js
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      REDIS_HOST: cache
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_NAME: ${MARIADB_DATABASE:-app}
+      DB_USER: ${MARIADB_USER:-app}
+      DB_PASSWORD: ${MARIADB_PASSWORD:-app_dev_password}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      cache:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    networks:
+      backend:
+        aliases:
+          - api-prod
+
+  worker-prod:
+    profiles: ["prod"]
+    build: ./backend
+    command: node worker.js
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: cache
+      DB_HOST: database
+      DB_PORT: 3306
+      DB_NAME: ${MARIADB_DATABASE:-app}
+      DB_USER: ${MARIADB_USER:-app}
+      DB_PASSWORD: ${MARIADB_PASSWORD:-app_dev_password}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+    depends_on:
+      cache:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    networks:
+      - backend
+
+  frontend-dev:
+    profiles: ["dev"]
+    container_name: prueba-frontend-dev
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    expose:
+      - "5173"
+    networks:
+      backend:
+        aliases:
+          - frontend-dev
+
+  frontend-prod:
+    profiles: ["prod"]
+    container_name: prueba-frontend-prod
+    build: ./frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      backend:
+        aliases:
+          - frontend-prod
+
+  dependencies:
+    container_name: prueba-deps
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    command: npm install --omit=dev
+    networks:
+      - backend
+
+  cache:
+    container_name: prueba-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backend
+
+  database:
+    container_name: prueba-mariadb
+    image: mariadb:11.4
+    restart: unless-stopped
+    ports:
+      - 3306:3306
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root}
+      MARIADB_ROOT_HOST: "%"
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-app}
+      MARIADB_USER: ${MARIADB_USER:-app}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-app_dev_password}
+    volumes:
+      - ./data/mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h localhost -u$${MARIADB_USER} -p$${MARIADB_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - backend
+
+  reverse-proxy:
+    container_name: prueba-proxy
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/proxy_params:/etc/nginx/proxy_params:ro
+      - ./certs:/etc/nginx/certs:ro
+    networks:
+      - backend
+
+networks:
+  backend:
+  

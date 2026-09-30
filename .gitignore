@@ -1,0 +1,5 @@
+certs/*-key.pem
+data/mariadb/*
+!data/mariadb/.gitkeep
+backend/node_modules/
+frontend/node_modules/
